@@ -1,8 +1,6 @@
-import numpy as np
-import cv2
-import os
-from scipy.ndimage import maximum_filter
 
+import cv2
+import numpy as np
 
 def read_image():
 
@@ -19,7 +17,7 @@ def read_image():
         fr'C:\Users\IMOE001\Desktop\shahaf\coursses\ps4\transB.jpg',
         cv2.IMREAD_GRAYSCALE)
 
-    return simA
+    return transA
 
 def scaled_img(img):
     scaled_img = 255*(img - np.min(img)) / np.ptp(img).astype(int)
@@ -43,7 +41,24 @@ def compute_R_matrix(img, alpha = 0.01):
         R_matrix[i, j] = cv2.determinant(M_matrix) - alpha*cv2.trace(M_matrix)[0]**2
     return R_matrix
 
-def harris_corners_detctor(R_matrix):
-    max_values = maximum_filter(R_matrix, size=4, mode='constant')
-    print(max_values)
+def harris_corners_detctor(R_matrix, threshold=0.25):
+    size = (3, 3)
+    shape = cv2.MORPH_RECT
+    kernel = cv2.getStructuringElement(shape, size)
+    max_values_img = cv2.dilate(R_matrix, kernel)
+    threshold = np.amax(max_values_img) * threshold
+    max_values_img[max_values_img < threshold] = 0
+    local_max_index = np.where(max_values_img)
+    return local_max_index
+
+def drew_harris_corners(img):
+    R_matrix = compute_R_matrix(img)
+    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    harris_corners_0, harris_corners_1 = harris_corners_detctor(R_matrix)
+    for i, j in zip(harris_corners_0, harris_corners_1):
+        harris_detector = cv2.circle(img, (j, i), 1, (0, 255, 0), -1)
+    return harris_detector
+
+
+
 

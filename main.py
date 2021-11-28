@@ -9,10 +9,10 @@ def main():
     img = Utils.read_image()
     R_matrix = Utils.compute_R_matrix(img)
     Utils.harris_corners_detctor(R_matrix)
-    print(R_matrix)
-    scaled_R_matrix = Utils.scaled_img(R_matrix)
+    harris_corners_detctor = Utils.drew_harris_corners(img)
+    #scaled_R_matrix = Utils.scaled_img(R_matrix)
 
-    cv2.imwrite(os.path.join(save_dir, f'R_matrix.jpg'), R_matrix)
+    cv2.imwrite(os.path.join(save_dir, f'harris_corners_detctor2.jpg'), harris_corners_detctor)
     #cv2.imwrite(os.path.join(save_dir, f'grad_x.jpg'), check_img_x)
 
 if __name__ == '__main__':
