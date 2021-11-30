@@ -16,7 +16,7 @@ def read_image():
         fr'C:\Users\IMOE001\Desktop\shahaf\coursses\ps4\transB.jpg',
         cv2.IMREAD_GRAYSCALE)
 
-    return transA
+    return transB, transA
 
 
 def compute_gradients(img=None):
@@ -39,7 +39,7 @@ def compute_R_matrix(img, alpha=0.02):
     return R_matrix
 
 
-def harris_corners_detctor(R_matrix, thresh=0.2):
+def harris_corners_detctor(R_matrix, thresh=0.1):
     size = (10, 10)
     shape = cv2.MORPH_RECT
     kernel = cv2.getStructuringElement(shape, size)
@@ -77,13 +77,35 @@ def NMS(harris_corners_0, harris_corners_1, mag):
 def compute_key_points(img):
     I_x, I_y = compute_gradients(img)
     mag, angle = cv2.cartToPolar(I_x, I_y, angleInDegrees=True)
+    angle = np.arctan2(I_x, I_y)
     R_matrix = compute_R_matrix(img)
     harris_corners_0, harris_corners_1 = harris_corners_detctor(R_matrix)
     key_points = []
     pick_i = NMS(harris_corners_0, harris_corners_1, mag)
-    for x in (pick_i):
+    mag = 1
+    for x in pick_i:
         key_points.append(cv2.KeyPoint(float(harris_corners_1[x]), float(harris_corners_0[x]),
-                                       mag[harris_corners_0[x], harris_corners_1[x]] / 500,
-                                       angle[harris_corners_0[x], harris_corners_1[x]]))
+                                       mag,
+                                       180 + np.rad2deg(angle[harris_corners_0[x], harris_corners_1[x]])))
     drew_key_points = cv2.drawKeypoints(img, key_points, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    return drew_key_points
+    return key_points
+
+def find_SIFT_matches(img_1, img_2):
+    sift = cv2.SIFT_create()
+    bfm = cv2.BFMatcher()
+    img1_k_points = compute_key_points(img_1)
+    _, des_points = sift.compute(img_1, img1_k_points)
+    img2_k_points = compute_key_points(img_2)
+    _, des_trans_points = sift.compute(img_2, img2_k_points)
+    matches = bfm.match(des_points, des_trans_points)
+    return img1_k_points, img2_k_points, matches
+
+def drew_SIFT_matches(img_1, img_2):
+    img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+    connect_img = cv2.cvtColor(np.concatenate((img_1, img_2), axis=1), cv2.COLOR_GRAY2RGB)
+    for m in matches:
+        src_points = img_1_keypoints[m.queryIdx].pt
+        dst_points = img_2_keypoints[m.trainIdx].pt
+        cv2.line(connect_img, (int(src_points[0]), int(src_points[1])), (int(img_1.shape[1] + dst_points[0]),
+                                                                         int(dst_points[1])), color=np.random.randint(0, 255, 3).tolist(), thickness=1)
+    return connect_img
