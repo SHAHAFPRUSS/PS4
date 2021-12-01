@@ -1,3 +1,5 @@
+import random
+import math
 import cv2
 import numpy as np
 
@@ -90,6 +92,7 @@ def compute_key_points(img):
     drew_key_points = cv2.drawKeypoints(img, key_points, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
     return key_points
 
+
 def find_SIFT_matches(img_1, img_2):
     sift = cv2.SIFT_create()
     bfm = cv2.BFMatcher()
@@ -100,12 +103,55 @@ def find_SIFT_matches(img_1, img_2):
     matches = bfm.match(des_points, des_trans_points)
     return img1_k_points, img2_k_points, matches
 
-def drew_SIFT_matches(img_1, img_2):
-    img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+
+def drew_matches(img_1, img_2, matches=None):
     connect_img = cv2.cvtColor(np.concatenate((img_1, img_2), axis=1), cv2.COLOR_GRAY2RGB)
+    if matches == None:
+        img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+    else:
+        img_1_keypoints, img_2_keypoints, _ = find_SIFT_matches(img_1, img_2)
+
     for m in matches:
         src_points = img_1_keypoints[m.queryIdx].pt
         dst_points = img_2_keypoints[m.trainIdx].pt
         cv2.line(connect_img, (int(src_points[0]), int(src_points[1])), (int(img_1.shape[1] + dst_points[0]),
-                                                                         int(dst_points[1])), color=np.random.randint(0, 255, 3).tolist(), thickness=1)
+                                                                         int(dst_points[1])),
+                 color=np.random.randint(0, 255, 3).tolist(), thickness=1)
     return connect_img
+
+def get_points_and_distance(img_1_keypoints, img_2_keypoints, random_sample):
+    first_point = img_1_keypoints[random_sample.queryIdx].pt
+    second_point = img_2_keypoints[random_sample.trainIdx].pt
+    first_point = (int(first_point[0]), int(first_point[1]))
+    second_point = (int(second_point[0]), int(second_point[1]))
+    d_x = first_point[0] - second_point[0]
+    d_y = first_point[1] - second_point[1]
+    return first_point, second_point, d_x, d_y
+
+
+def RANSAC_sample_solve(img_1, img_2):
+    inliers = []
+    inliers_temp = []
+    threshold = 5
+    img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+    for i in matches:
+        random_sample = random.choice(matches)
+        _, _, d_x, d_y = get_points_and_distance(img_1_keypoints, img_2_keypoints, random_sample)
+        for m in matches:
+            first_point, second_point, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, m)
+            remove_first_point = (first_point[0] - d_x, first_point[1] - d_y)
+            err = math.hypot(remove_first_point[0] - second_point[0], remove_first_point[1] - second_point[1])
+            if err <= threshold:
+                inliers_temp.append(m)
+        if len(inliers_temp) > len(inliers):
+            inliers = inliers_temp
+            best_match = (d_x, d_y)
+        inliers_temp = []
+    RANSAC_match = drew_matches(img_1, img_2, inliers)
+    return best_match, inliers, RANSAC_match
+
+def similarity_transform(first_point, second_point):
+    pw_vector = [first_point[0], first_point[1], 1]
+    p_vector = [second_point[0], second_point[0], 1]
+    h_martix = np.array(3, 3)
+    h_martix[3, 3] = 1
