@@ -18,7 +18,7 @@ def read_image():
         fr'C:\Users\IMOE001\Desktop\shahaf\coursses\ps4\transB.jpg',
         cv2.IMREAD_GRAYSCALE)
 
-    return transB, transA
+    return transA, transB
 
 
 def compute_gradients(img=None):
@@ -103,7 +103,6 @@ def find_SIFT_matches(img_1, img_2):
     matches = bfm.match(des_points, des_trans_points)
     return img1_k_points, img2_k_points, matches
 
-
 def drew_matches(img_1, img_2, matches=None):
     connect_img = cv2.cvtColor(np.concatenate((img_1, img_2), axis=1), cv2.COLOR_GRAY2RGB)
     if matches == None:
@@ -128,15 +127,12 @@ def get_points_and_distance(img_1_keypoints, img_2_keypoints, random_sample):
     d_y = first_point[1] - second_point[1]
     return first_point, second_point, d_x, d_y
 
-
-def RANSAC_sample_solve(img_1, img_2):
+def RANSAC_sample_solve_translation(img_1, img_2, threshold = 5):
     inliers = []
     inliers_temp = []
-    threshold = 5
     img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
     for i in matches:
-        random_sample = random.choice(matches)
-        _, _, d_x, d_y = get_points_and_distance(img_1_keypoints, img_2_keypoints, random_sample)
+        _, _, d_x, d_y = get_points_and_distance(img_1_keypoints, img_2_keypoints, random.choice(matches))
         for m in matches:
             first_point, second_point, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, m)
             remove_first_point = (first_point[0] - d_x, first_point[1] - d_y)
@@ -150,8 +146,81 @@ def RANSAC_sample_solve(img_1, img_2):
     RANSAC_match = drew_matches(img_1, img_2, inliers)
     return best_match, inliers, RANSAC_match
 
-def similarity_transform(first_point, second_point):
-    pw_vector = [first_point[0], first_point[1], 1]
-    p_vector = [second_point[0], second_point[0], 1]
-    h_martix = np.array(3, 3)
-    h_martix[3, 3] = 1
+def RANSAC_sample_solve_similarity(img_1, img_2, threshold = 5, matrix='translation'):
+    inliers = []
+    inliers_temp = []
+    img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+    for i in matches:
+        x, y, d_x, d_y = get_points_and_distance(img_1_keypoints, img_2_keypoints, random.choice(matches))
+        x_w, y_w, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, random.choice(matches))
+        h_matrix = compute_h_matrix(x, y, x_w, y_w)
+        for m in matches:
+            first_point, second_point, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, m)
+            first_point = np.array([first_point[0], first_point[1], 1]).reshape(3, 1)
+            if matrix == 'translation':
+                translation_matrix = np.array([[1, 0, h_matrix[0][2]], [0, 1, h_matrix[0][3]], [0, 0, 1]]).reshape(3, 3)
+                new_point = np.matmul(translation_matrix, first_point)
+            if matrix == 'similarity':
+                similarity_matrix = np.array([[h_matrix[0][0], -h_matrix[0][1], h_matrix[0][2]],
+                                             [h_matrix[0][1], h_matrix[0][0], h_matrix[0][3]]]).reshape(2, 3)
+                new_point = np.matmul(similarity_matrix, first_point)
+            err = math.hypot(new_point[0] - second_point[0], new_point[1] - second_point[1])
+            if err <= threshold:
+                inliers_temp.append(m)
+        if len(inliers_temp) > len(inliers):
+            inliers = inliers_temp
+        inliers_temp = []
+    RANSAC_match = drew_matches(img_1, img_2, inliers)
+    return RANSAC_match
+
+def compute_h_matrix(first_point, second_point, first_point_w, second_point_w):
+    p_vector = np.array([[first_point[0], -first_point[1], 1, 0], [first_point[1], -first_point[0], 0, 1],
+                         [second_point[0], -second_point[1], 1, 0],
+                         [second_point[1], -second_point[0], 0, 1]]).reshape(4, 4)
+    pw_vector = np.array([first_point_w[0], first_point_w[1], second_point_w[0], second_point_w[1]]).reshape(4, 1)
+    h_martix = np.linalg.solve(p_vector, pw_vector)
+    return h_martix.reshape(1, 4)
+
+def translation_transform(d_x, d_y, matches, img_1_keypoints, img_2_keypoints, img_1, img_2):
+    inliers = []
+    inliers_temp = []
+    threshold = 5
+    for m in matches:
+        first_point, second_point, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, m)
+        remove_first_point = (first_point[0] - d_x, first_point[1] - d_y)
+        err = math.hypot(remove_first_point[0] - second_point[0], remove_first_point[1] - second_point[1])
+        if err <= threshold:
+            inliers_temp.append(m)
+    if len(inliers_temp) > len(inliers):
+        inliers = inliers_temp
+        best_match = (d_x, d_y)
+    inliers_temp = []
+    return inliers
+
+def RANSAC_sample_solve(img_1, img_2, matrix='translation', threshold=5):
+    inliers = []
+    inliers_temp = []
+    img_1_keypoints, img_2_keypoints, matches = find_SIFT_matches(img_1, img_2)
+    for i in matches:
+        if matrix == 'translation':
+            err, m = similarity_transform(matches, img_1_keypoints, img_2_keypoints)
+        if matrix == 'similarity':
+            inliers.append(similarity_transform(x, y, x_w, y_w, matches, img_1_keypoints, img_2_keypoints))
+        if err <= threshold:
+            inliers_temp.append(m)
+    if len(inliers_temp) > len(inliers):
+        inliers = inliers_temp
+    inliers_temp = []
+    RANSAC_match = drew_matches(img_1, img_2, inliers)
+    return RANSAC_match
+
+def similarity_transform(matches, img_1_keypoints, img_2_keypoints, threshold=5):
+    inliers_temp = []
+    _, _, d_x, d_y = get_points_and_distance(img_1_keypoints, img_2_keypoints, random.choice(matches))
+    for m in matches:
+        first_point, second_point, _, _ = get_points_and_distance(img_1_keypoints, img_2_keypoints, m)
+        remove_first_point = (first_point[0] - d_x, first_point[1] - d_y)
+        err = math.hypot(remove_first_point[0] - second_point[0], remove_first_point[1] - second_point[1])
+        if err <= threshold:
+            inliers_temp.append(m)
+    return inliers_temp
